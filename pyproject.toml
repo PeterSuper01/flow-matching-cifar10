@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "flow-matching-cifar10"
+version = "0.1.0"
+description = "Conditional flow matching with CFG on CIFAR-10"
+authors = []
+packages = []
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = ">=2.0"
+torchvision = ">=0.15"
+torchcfm = "*"
+matplotlib = "*"
+numpy = "*"
+
+[tool.poetry.group.eval.dependencies]
+torchmetrics = {version = "*", extras = ["image"]}
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0"
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["."]          # makes project root importable (pytest >= 7)
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

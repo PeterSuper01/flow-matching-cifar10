@@ -1,0 +1,20 @@
+# data & checkpoints
+data/
+checkpoints/
+*.pt
+
+# generated images
+*.png
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# jupyter
+.ipynb_checkpoints/
+
+# misc
+.DS_Store
+.claude/
