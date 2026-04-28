@@ -1,3 +1,4 @@
+import copy
 import os
 import torch
 import torch.nn as nn
@@ -76,7 +77,7 @@ def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
             t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1)
             loss = F.mse_loss(model(t, xt, y_in), ut)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
@@ -99,5 +100,6 @@ def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
             }, path)
             print(f"  └─ checkpoint saved → {path}")
 
-    ema.apply_to(model)
-    return model, epoch_losses
+    ema_model = copy.deepcopy(model)
+    ema.apply_to(ema_model)
+    return ema_model, epoch_losses
