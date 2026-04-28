@@ -148,3 +148,113 @@ class UNet(nn.Module):
 
         # ── output ────────────────────────────────────────────────────────────
         return self.out_conv(F.silu(self.out_norm(h)))   # (B, 64, 32, 32) → (B, 3, 32, 32)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AdaGN variant (Scheme C): same sinusoidal time emb + scale+shift conditioning
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AdaGN(nn.Module):
+    """
+    Adaptive GroupNorm: replaces (GroupNorm + additive time) with (GroupNorm + γ·h + β).
+    γ and β are predicted from t_emb via a linear layer zero-initialised so the block
+    starts as an identity transform.
+    """
+    def __init__(self, num_channels, time_dim, num_groups=8):
+        super().__init__()
+        self.norm = nn.GroupNorm(num_groups, num_channels, affine=False)
+        self.to_scale_shift = nn.Linear(time_dim, num_channels * 2)
+        nn.init.zeros_(self.to_scale_shift.weight)
+        nn.init.zeros_(self.to_scale_shift.bias)
+
+    def forward(self, h, t_emb):
+        h = self.norm(h)
+        scale_shift = self.to_scale_shift(F.silu(t_emb))        # (B, 2C)
+        scale, shift = scale_shift.chunk(2, dim=-1)
+        return h * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
+
+
+class ResBlockAdaGN(nn.Module):
+    """ResBlock that conditions via AdaGN (scale+shift) instead of additive projection."""
+    def __init__(self, in_ch, out_ch, time_dim):
+        super().__init__()
+        self.norm1 = AdaGN(in_ch,  time_dim)
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3, padding=1)
+        self.norm2 = AdaGN(out_ch, time_dim)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1)
+        self.skip  = nn.Conv2d(in_ch, out_ch, 1) if in_ch != out_ch else nn.Identity()
+
+    def forward(self, x, t_emb):
+        h = self.conv1(F.silu(self.norm1(x, t_emb)))
+        h = self.conv2(F.silu(self.norm2(h, t_emb)))
+        return h + self.skip(x)
+
+
+class UNetAdaGN(nn.Module):
+    """
+    UNet with sinusoidal time embedding + AdaGN (scale+shift) conditioning.
+    Same architecture and interface as UNet — drop-in replacement for training/inference.
+    """
+    def __init__(self, in_ch=3, base_ch=64, ch_mult=(1, 2, 4), time_dim=256,
+                 num_classes=NUM_CLASSES):
+        super().__init__()
+        chs = [base_ch * m for m in ch_mult]
+
+        self.time_emb = nn.Sequential(
+            SinusoidalPosEmb(time_dim),
+            nn.Linear(time_dim, time_dim * 4),
+            nn.SiLU(),
+            nn.Linear(time_dim * 4, time_dim),
+        )
+        self.class_emb = nn.Embedding(num_classes + 1, time_dim)
+        self.init_conv  = nn.Conv2d(in_ch, chs[0], 3, padding=1)
+
+        self.enc_blocks  = nn.ModuleList()
+        self.downsamples = nn.ModuleList()
+        for i, ch in enumerate(chs):
+            in_c = chs[i - 1] if i > 0 else chs[0]
+            self.enc_blocks.append(nn.ModuleList([
+                ResBlockAdaGN(in_c, ch, time_dim),
+                ResBlockAdaGN(ch,   ch, time_dim),
+            ]))
+            if i < len(chs) - 1:
+                self.downsamples.append(nn.Conv2d(ch, ch, 4, stride=2, padding=1))
+
+        self.mid = nn.ModuleList([
+            ResBlockAdaGN(chs[-1], chs[-1], time_dim),
+            ResBlockAdaGN(chs[-1], chs[-1], time_dim),
+        ])
+
+        self.upsamples  = nn.ModuleList()
+        self.dec_blocks = nn.ModuleList()
+        for i in range(len(chs) - 1, 0, -1):
+            in_c, out_c = chs[i], chs[i - 1]
+            self.upsamples.append(nn.ConvTranspose2d(in_c, in_c, 4, stride=2, padding=1))
+            self.dec_blocks.append(nn.ModuleList([
+                ResBlockAdaGN(in_c + out_c, out_c, time_dim),
+                ResBlockAdaGN(out_c,        out_c, time_dim),
+            ]))
+
+        self.out_norm = nn.GroupNorm(8, chs[0])
+        self.out_conv = nn.Conv2d(chs[0], in_ch, 1)
+
+    def forward(self, t, x, y):
+        t_emb = self.time_emb(t) + self.class_emb(y)
+
+        h = self.init_conv(x)
+
+        skips, down_idx = [], 0
+        for i, (r1, r2) in enumerate(self.enc_blocks):
+            h = r2(r1(h, t_emb), t_emb)
+            if i < len(self.enc_blocks) - 1:
+                skips.append(h)
+                h = self.downsamples[down_idx](h)
+                down_idx += 1
+
+        h = self.mid[1](self.mid[0](h, t_emb), t_emb)
+
+        for up, (r1, r2) in zip(self.upsamples, self.dec_blocks):
+            h = torch.cat([up(h), skips.pop()], dim=1)
+            h = r2(r1(h, t_emb), t_emb)
+
+        return self.out_conv(F.silu(self.out_norm(h)))
