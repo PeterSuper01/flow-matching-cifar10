@@ -3,21 +3,25 @@ from torch.utils.data import DataLoader
 from torchmetrics.image.fid import FrechetInceptionDistance
 
 from models.unet import NUM_CLASSES
+from data import get_dataset
 from sampler import generate
 
 
 @torch.no_grad()
-def compute_fid(model, dataset, n_real=10_000, n_fake=10_000,
+def compute_fid(model, dataset=None, n_real=10_000, n_fake=10_000,
                 batch_size=256, guidance_scale=3.0, steps=100):
     device = next(model.parameters()).device
     fid    = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
 
+    # Use the clean test split (no augmentation) for a reproducible reference distribution.
+    ref_dataset = get_dataset(train=False)
     n_done = 0
-    for imgs, _ in DataLoader(dataset, batch_size=batch_size, shuffle=True):
+    for imgs, _ in DataLoader(ref_dataset, batch_size=batch_size, shuffle=False):
+        take = imgs[:n_real - n_done]
+        fid.update((take.to(device) * 0.5 + 0.5).clamp(0, 1), real=True)
+        n_done += len(take)
         if n_done >= n_real:
             break
-        fid.update((imgs.to(device) * 0.5 + 0.5).clamp(0, 1), real=True)
-        n_done += len(imgs)
 
     n_done = 0
     while n_done < n_fake:
