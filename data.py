@@ -12,6 +12,6 @@ def get_dataset(root="./data", train=True):
     )
 
 
-def get_loader(dataset, batch_size=128, num_workers=2):
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True,
+def get_loader(dataset, batch_size=128, num_workers=2, shuffle=True):
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
                       num_workers=num_workers, pin_memory=True)
