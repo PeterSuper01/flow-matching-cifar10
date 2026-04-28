@@ -72,17 +72,17 @@ def train(epochs=100, lr=2e-4, warmup_epochs=5, grad_clip=1.0, batch_size=128,
         val_dataset = get_dataset(train=False)
 
     os.makedirs(checkpoint_dir, exist_ok=True)
-    loader     = get_loader(dataset, batch_size=batch_size)
+    loader = get_loader(dataset, batch_size=batch_size)
     val_loader = get_loader(val_dataset, batch_size=val_batch_size, shuffle=False)
     if model is None:
         model = UNet(in_ch=3, base_ch=64, ch_mult=(1, 2, 4)).to(device)
-    ema       = EMA(model, decay=0.9999)
+    ema = EMA(model, decay=0.9999)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     warmup_sched = LinearLR(optimizer, start_factor=1e-2, end_factor=1.0, total_iters=warmup_epochs)
     cosine_sched = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min=1e-6)
-    scheduler    = SequentialLR(optimizer, schedulers=[warmup_sched, cosine_sched],
-                                milestones=[warmup_epochs])
-    FM           = ConditionalFlowMatcher(sigma=0.0)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_sched, cosine_sched],
+                             milestones=[warmup_epochs])
+    FM = ConditionalFlowMatcher(sigma=0.0)
     print(f"batch_size={batch_size}  |  steps/epoch: {len(loader):,}  |  "
           f"val_batch_size={val_batch_size}  |  val_steps: {len(val_loader):,}  |  "
           f"warmup_epochs={warmup_epochs}")
@@ -98,7 +98,7 @@ def train(epochs=100, lr=2e-4, warmup_epochs=5, grad_clip=1.0, batch_size=128,
         optimizer.load_state_dict(ckpt["optimizer_state"])
         scheduler.load_state_dict(ckpt["scheduler_state"])
         train_losses = ckpt.get("train_losses", [])
-        val_losses   = ckpt.get("val_losses",   [])
+        val_losses = ckpt.get("val_losses", [])
         print(f"Resumed from '{resume_from}'  (epoch {start_epoch}/{epochs})")
 
     for epoch in range(start_epoch, epochs):
