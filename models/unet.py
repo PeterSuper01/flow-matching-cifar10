@@ -39,7 +39,7 @@ class ResBlock(nn.Module):
 
     def forward(self, x, t_emb):
         h = self.conv1(F.silu(self.norm1(x)))           # (B, out_ch, H, W)
-        h = h + self.time_proj(t_emb)[:, :, None, None] # broadcast (B, out_ch, 1, 1) → (B, out_ch, H, W)
+        h = h + self.time_proj(F.silu(t_emb))[:, :, None, None] # broadcast (B, out_ch, 1, 1) → (B, out_ch, H, W)
         h = self.conv2(F.silu(self.norm2(h)))            # (B, out_ch, H, W)
         return h + self.skip(x)                          # (B, out_ch, H, W)
 
