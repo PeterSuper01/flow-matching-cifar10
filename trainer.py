@@ -59,7 +59,7 @@ def evaluate(model, val_loader, FM, device):
 
 
 def train(epochs=100, lr=2e-4, warmup_epochs=5, grad_clip=1.0, batch_size=128,
-          val_batch_size=256,
+          val_batch_size=256, ema_decay=0.9999,
           checkpoint_dir="checkpoints", checkpoint_every=10,
           resume_from=None, device=None, dataset=None, val_dataset=None,
           model=None):
@@ -76,7 +76,7 @@ def train(epochs=100, lr=2e-4, warmup_epochs=5, grad_clip=1.0, batch_size=128,
     val_loader = get_loader(val_dataset, batch_size=val_batch_size, shuffle=False)
     if model is None:
         model = UNet(in_ch=3, base_ch=64, ch_mult=(1, 2, 4)).to(device)
-    ema = EMA(model, decay=0.9999)
+    ema = EMA(model, decay=ema_decay)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     warmup_sched = LinearLR(optimizer, start_factor=1e-2, end_factor=1.0, total_iters=warmup_epochs)
     cosine_sched = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min=1e-6)
