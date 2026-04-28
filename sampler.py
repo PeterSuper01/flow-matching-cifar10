@@ -17,6 +17,7 @@ def generate(model, y, steps=100, guidance_scale=3.0):
     """
     model.eval()
     device = next(model.parameters()).device
+    y    = y.to(device)
     n    = len(y)
     x    = torch.randn(n, 3, 32, 32, device=device)
     null = torch.full_like(y, NUM_CLASSES)
@@ -38,6 +39,7 @@ def generate(model, y, steps=100, guidance_scale=3.0):
 
 
 def show_images(imgs, nrow=8, title="Generated", fname=None):
+    """imgs: (N, 3, H, W) float tensor in [-1, 1]."""
     imgs = (imgs.cpu() * 0.5 + 0.5).clamp(0, 1)
     grid = torchvision.utils.make_grid(imgs[:nrow * nrow], nrow=nrow, padding=2)
     plt.figure(figsize=(nrow * 1.5, nrow * 1.5))
