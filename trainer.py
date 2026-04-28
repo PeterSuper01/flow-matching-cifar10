@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torchcfm.conditional_flow_matching import ConditionalFlowMatcher
 
 from models.unet import UNet, NUM_CLASSES
@@ -58,7 +58,7 @@ def evaluate(model, val_loader, FM, device):
     return total_loss / max(n_batches, 1)
 
 
-def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
+def train(epochs=100, lr=2e-4, warmup_epochs=5, grad_clip=1.0, batch_size=128,
           val_batch_size=256,
           checkpoint_dir="checkpoints", checkpoint_every=10,
           resume_from=None, device=None, dataset=None, val_dataset=None,
@@ -78,10 +78,14 @@ def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
         model = UNet(in_ch=3, base_ch=64, ch_mult=(1, 2, 4)).to(device)
     ema       = EMA(model, decay=0.9999)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
-    FM        = ConditionalFlowMatcher(sigma=0.0)
+    warmup_sched = LinearLR(optimizer, start_factor=1e-2, end_factor=1.0, total_iters=warmup_epochs)
+    cosine_sched = CosineAnnealingLR(optimizer, T_max=epochs - warmup_epochs, eta_min=1e-6)
+    scheduler    = SequentialLR(optimizer, schedulers=[warmup_sched, cosine_sched],
+                                milestones=[warmup_epochs])
+    FM           = ConditionalFlowMatcher(sigma=0.0)
     print(f"batch_size={batch_size}  |  steps/epoch: {len(loader):,}  |  "
-          f"val_batch_size={val_batch_size}  |  val_steps: {len(val_loader):,}")
+          f"val_batch_size={val_batch_size}  |  val_steps: {len(val_loader):,}  |  "
+          f"warmup_epochs={warmup_epochs}")
 
     train_losses = []
     val_losses = []
