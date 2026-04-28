@@ -35,7 +35,7 @@ class EMA:
 
 def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
           checkpoint_dir="checkpoints", checkpoint_every=10,
-          resume_from=None, device=None, dataset=None):
+          resume_from=None, device=None, dataset=None, model=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if dataset is None:
@@ -43,13 +43,15 @@ def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
 
     os.makedirs(checkpoint_dir, exist_ok=True)
     loader    = get_loader(dataset, batch_size=batch_size)
-    model     = UNet(in_ch=3, base_ch=64, ch_mult=(1, 2, 4)).to(device)
+    if model is None:
+        model = UNet(in_ch=3, base_ch=64, ch_mult=(1, 2, 4)).to(device)
     ema       = EMA(model, decay=0.9999)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
     FM        = ConditionalFlowMatcher(sigma=0.0)
     print(f"batch_size={batch_size}  |  steps/epoch: {len(loader):,}")
 
+    epoch_losses = []
     start_epoch = 0
     if resume_from is not None:
         ckpt = torch.load(resume_from, map_location=device, weights_only=True)
@@ -83,6 +85,7 @@ def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
 
         scheduler.step()
         avg_loss = total_loss / len(loader)
+        epoch_losses.append(avg_loss)
         print(f"epoch {epoch+1:3d}/{epochs} | lr {optimizer.param_groups[0]['lr']:.2e} | loss {avg_loss:.4f}")
 
         if (epoch + 1) % checkpoint_every == 0:
@@ -97,4 +100,4 @@ def train(epochs=100, lr=2e-4, grad_clip=1.0, batch_size=128,
             print(f"  └─ checkpoint saved → {path}")
 
     ema.apply_to(model)
-    return model
+    return model, epoch_losses
